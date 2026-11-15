@@ -233,10 +233,7 @@ saajha/
 
 | Name | College | Role |
 |---|---|---|
-| _Member 1_ | _College_ | _Role_ |
-| _Member 2_ | _College_ | _Role_ |
-| _Member 3_ | _College_ | _Role_ |
-| _Member 4_ | _College_ | _Role_ |
+| Amberneal Singh | Thapar University | Full Stack Developer |
 
 ## Disclaimer
 
