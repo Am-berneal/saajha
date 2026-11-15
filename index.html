@@ -1881,8 +1881,35 @@ async function loadEval(){
     $('#evCalls').innerHTML=c.calls.length?c.calls.map(x=>`<tr><td class="mono">${esc((x.ts||'').slice(11,19))}</td><td>${esc(x.feature)}</td><td><span class="chip ${x.engine==='gemini'?'ok':'warn'}">${esc(x.engine)}</span></td><td class="num">${x.latency_ms??''}</td><td>${x.valid?'✓':'✗'}${x.retried?' ↻':''}</td><td class="en">${esc(x.fallback||'')}${x.error?' · '+esc(String(x.error).slice(0,30)):''}</td></tr>`).join(''):'<tr><td colspan="6" class="en">No calls yet. Make a bill on the voice or photo screen.</td></tr>';
   }catch(err){$('#evCalls').innerHTML=`<tr><td colspan="6" class="errbox">${esc(err.message)}</td></tr>`}
 }
-hooks['a-accuracy']=async()=>loadEval();$('#evRefresh').onclick=loadEval;
 
+async function loadEval(){
+  const calls=$('#evCalls');
+  const msg=(t,cls='en')=>{calls.innerHTML=`<tr><td colspan="6" class="${cls}">${t}</td></tr>`};
+  if(!LIVE.on){msg('Live mode only. Start the backend (backend\\run.bat) and open http://localhost:8000');return}
+  let e;
+  try{e=await api('/api/eval/latest')}
+  catch(err){msg('Backend not reachable. Start it again with <b>backend\\run.bat</b>, then press Refresh.','errbox');return}
+  const r=e.rules||{},g=e.gemini||{};
+  if(r.measured){const q=k=>$(`#evRules [data-e="${k}"]`);q('dev').textContent=pc(r.dev_exact);q('hold').textContent=pc(r.holdout_exact);q('money').textContent=pc(r.money_total_accuracy);q('silent').textContent=r.silent_errors}
+  const q=k=>$(`#evGem [data-e="${k}"]`);
+  if(g.measured){
+    const used=(g.n||0)-(g.fallbacks||0);
+    if(used<=0){
+      q('gstate').className='chip bad';q('gstate').textContent='Gemini not used';
+      ['gdev','ghold','gmoney','gsilent'].forEach(k=>q(k).textContent='—');
+      q('gnote').textContent=`The last run (${(g.run_at||'').slice(0,10)}) fell back to the rule parser on every bill, so it measured nothing about Gemini. Check GEMINI_API_KEY in backend/.env and run: python eval/run_eval.py --engine gemini --limit 5`;
+    }else{
+      $('#evGem').classList.remove('na');q('gstate').className='chip ok';q('gstate').textContent='measured '+(g.run_at||'').slice(0,10);
+      q('gdev').textContent=pc(g.dev_exact);q('ghold').textContent=pc(g.holdout_exact);q('gmoney').textContent=pc(g.money_total_accuracy);q('gsilent').textContent=g.silent_errors;
+      q('gnote').textContent=`${g.model} · Gemini used on ${used}/${g.n} bills · p50 ${g.latency_ms_p50} ms`;
+    }
+  }
+  try{
+    const c=await api('/api/ai/calls?limit=12');
+    if(!c.calls.length){msg('No calls yet. Make a bill on the voice or photo screen.');return}
+    calls.innerHTML=c.calls.map(x=>`<tr><td class="mono">${esc((x.ts||'').slice(11,19))}</td><td>${esc(x.feature)}</td><td><span class="chip ${x.engine==='gemini'?'ok':'warn'}">${esc(x.engine)}</span></td><td class="num">${x.latency_ms??''}</td><td>${x.valid?'✓':'✗'}${x.retried?' ↻':''}</td><td class="en">${esc(x.fallback||'')}${x.error?' · '+esc(String(x.error).slice(0,40)):''}</td></tr>`).join('');
+  }catch(err){msg('Could not load recent calls: '+esc(err.message),'errbox')}
+}
 /* ---------- Tamper test (real SHA-256 in browser; backend in live mode) ---------- */
 const TP_EVENTS=[
  {seq:1,type:'InvoiceCreated',signer:'supplier',payload:{amount:21000,buyer:'Sharma Traders Pvt Ltd',terms_days:45}},

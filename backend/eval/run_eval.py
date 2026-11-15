@@ -88,6 +88,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", choices=["auto", "rules", "gemini"], default="auto")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--sleep", type=float, default=6.5, help="seconds between Gemini calls (free tier is ~10 requests/minute)")
     ap.add_argument("--set", choices=["dev", "holdout", "both"], default="both")
     args = ap.parse_args()
     engine = args.engine
@@ -107,12 +108,18 @@ def main() -> None:
         ms = int((time.time() - t0) * 1000)
         lat.append(ms)
         s = score(pred, r)
-        s.update(id=r["id"], style=r["style"], utterance=r["utterance"], engine=pred.get("source", engine), ms=ms)
+        s.update(id=r["id"], style=r["style"], utterance=r["utterance"], engine=pred.get("source", engine), ms=ms,
+                 why=(pred.get("meta") or {}).get("fallback_reason", ""))
         results.append(s)
+        if engine == "gemini" and not str(s["engine"]).startswith("gemini"):
+            print(f"    !! Gemini NOT used for {r['id']} -> fell back to rules. Reason: {s['why'][:160]}")
+            if len(results) == 3 and all(not str(x["engine"]).startswith("gemini") for x in results):
+                sys.exit("\nStopped: the first 3 calls all fell back, so this would only measure the rule parser.\n"
+                         "Fix the reason above (key, model name, or rate limit) and run again.")
         mark = "OK " if s["exact"] else ("ASK" if s["asked"] else "ERR")
         print(f"{mark} {r['id']} [{r['style']:8}] {r['utterance'][:60]}")
         if engine == "gemini":
-            time.sleep(0.4)  # stay under free-tier rate limits
+            time.sleep(args.sleep)  # stay under free-tier rate limits
 
     n = len(results)
     by_style = {}
@@ -120,7 +127,7 @@ def main() -> None:
         b = by_style.setdefault(s["style"], {"n": 0, "exact": 0})
         b["n"] += 1
         b["exact"] += s["exact"]
-    fallbacks = sum(1 for s in results if engine == "gemini" and s["engine"] == "rule-parser")
+    fallbacks = sum(1 for s in results if engine == "gemini" and not str(s["engine"]).startswith("gemini"))
     report = {
         "measured": True,
         "engine": engine,
@@ -147,8 +154,10 @@ def main() -> None:
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     hist = db.DATA_DIR / f"eval_{engine}.json"
     hist.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nEngine {engine}: exact {report['exact_match']:.0%} · fields {report['field_accuracy']:.0%} · "
-          f"dev {report['dev_exact']} · HOLD-OUT {report['holdout_exact']} · money total {report['money_total_accuracy']:.0%} · silent errors {report['silent_errors']} → {out}")
+    used = f"Gemini used {n - fallbacks}/{n} · " if engine == "gemini" else ""
+    print(f"\nEngine {engine}: exact {report['exact_match']:.0%} · fields {report['field_accuracy']:.0%} · {used}"
+          f"dev {report['dev_exact']} · HOLD-OUT {report['holdout_exact']} · money total {report['money_total_accuracy']:.0%} · "
+          f"silent errors {report['silent_errors']} → {out}")
 
 
 if __name__ == "__main__":
