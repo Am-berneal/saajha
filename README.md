@@ -229,7 +229,7 @@ saajha/
 └── README.md
 ```
 
-## Team (4 students)
+## Team 
 
 | Name | College | Role |
 |---|---|---|
